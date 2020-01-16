@@ -1,0 +1,70 @@
+version:  '3.4'
+services: 
+  db:
+    image: 'postgres:alpine'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: user_password
+      POSTGRES_DB: dbname
+    volumes: 
+      - ./project_db/localdb/datadir:/var/lib/postgresql/data
+      - ./project_db/initscrpts/dbcreations-with-migrations-runsOnce/init-scripts:/docker-entrypoint-initdb.d
+      - ./project_db/initscrpts/dbcreations-with-migrations-runsOnce/migrations/sqls/up:/migrations
+    ports: 
+      - '${EXTERNALPGPORT}:${PGPORT}'
+    # healthcheck:
+    #   test: pg_isready -U postgres
+    #   interval: 10s
+    #   timeout: 10s
+    #   retries: 5
+    #   start_period: 5s
+    # command: ["bundle", "exec", "thin", "-p", "3000"]
+  redis:
+    image: 'redis:alpine'
+  api: 
+    restart: always
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    # Add wait-for inside server
+    # command: sh -c './wait-for.sh db:${PGPORT} -- npm run dev'
+    depends_on: 
+      - db
+    volumes: 
+      - /app/node_modules
+      - ./server:/app
+    environment: 
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - PGHOST=db
+      - PGUSER=${PGUSER}
+      - PGPASSWORD=${PGPASSWORD}
+      - PGDATABASE=${PGDATABASE}
+      - PGPORT=${PGPORT}
+  worker:
+    build:
+      dockerfile: Dockerfile.dev
+      context: ./worker
+    volumes: 
+      - /app/node_modules
+      - ./worker:/app
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+  client:
+    build:
+      dockerfile: Dockerfile.dev
+      context: ./client
+    volumes: 
+      - /app/node_modules
+      - ./client:/app
+  nginx:
+    depends_on:
+      - api
+      - client
+    restart: always
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.dev
+    ports: 
+      - '${EXTERNALWEBPORT}:80'
